@@ -30,6 +30,46 @@
 * ships explode when out of health
 */
 
+float angleBetween(float x1, float y1, float x2, float y2) {
+	return atan2f(y2 - y1, x2 - x1);
+}
+
+class Component {
+public:
+	Component() {
+
+	}
+
+	void control() {
+		angle = angleBetween(hitbox.x + hitbox.width / 2.0f, hitbox.y + hitbox.height / 2.0f, GetMouseX(), GetMouseY());
+
+		if (IsKeyDown(KeyboardKey::KEY_W)) {
+			hitbox.y -= 3;
+		}
+		if (IsKeyDown(KeyboardKey::KEY_A)) {
+			hitbox.x -= 3;
+		}
+		if (IsKeyDown(KeyboardKey::KEY_S)) {
+			hitbox.y += 3;
+		}
+		if (IsKeyDown(KeyboardKey::KEY_D)) {
+			hitbox.x += 3;
+		}
+	}
+
+	void draw() {
+		Rectangle display = { hitbox.x + hitbox.width / 2.0f, hitbox.y + hitbox.height / 2.0f, hitbox.width, hitbox.height };
+		Vector2 center = { hitbox.width / 2.0f, hitbox.height / 2.0f };
+		DrawRectanglePro(display, center, RAD2DEG * angle, WHITE);
+
+		DrawRectangleLinesEx(hitbox, 2.0f, RED);
+		DrawCircle(hitbox.x, hitbox.y, 2.0f, RED);
+	}
+
+private:
+	Rectangle hitbox{};
+	float angle;
+};
 
 int main() {
 	/*if (enet_initialize() != 0) {
@@ -41,34 +81,15 @@ int main() {
 	InitWindow(800, 800, "Space Game Multiplayer Project");
 	SetTargetFPS(60);
 
-	Rectangle hitbox{ 0.0f, 0.0f, 25.0f, 25.0f };
-	Rectangle display{ 0.0f, 0.0f, 25.0f, 25.0f };
+	Component c;
 
 	while (!WindowShouldClose()) {
-		if (IsKeyDown(KeyboardKey::KEY_W)) {
-			hitbox.y -= 3;
-			display.y -= 3;
-		}
-		if (IsKeyDown(KeyboardKey::KEY_A)) {
-			hitbox.x -= 3;
-			display.x -= 3;
-		}
-		if (IsKeyDown(KeyboardKey::KEY_S)) {
-			hitbox.y += 3;
-			display.y += 3;
-		}
-		if (IsKeyDown(KeyboardKey::KEY_D)) {
-			hitbox.x += 3;
-			display.x += 3;
-		}
-
+		c.control();
 
 		BeginDrawing();
 		ClearBackground(BLACK);
 
-		DrawRectangleRec(display, WHITE);
-		DrawRectangleLinesEx(hitbox, 2.0f, RED);
-		DrawCircle(hitbox.x, hitbox.y, 2.0f, RED);
+		c.draw();
 
 		EndDrawing();
 	}
