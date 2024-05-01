@@ -260,6 +260,55 @@ private:
 	bool enabled{};
 };
 
+class TextField {
+public:
+	template <typename _Pr>
+	void append_if(char c, _Pr _Pred) {
+		if (_Pred()) {
+			append(c);
+		}
+	}
+
+	void append(char c) {
+		s.push_back(c);
+	}
+
+	void pop_back() {
+		if (s.size() == 0) return;
+		s.pop_back();
+	}
+
+	std::string flush() {
+		std::string t = s;
+		s.clear();
+
+		return t;
+	}
+
+	const std::string& data() {
+		return s;
+	}
+
+	void clear() {
+		s.clear();
+	}
+
+	void draw(int x, int y) {
+		DrawText(s.c_str(), x, y, 10, BLACK);
+	}
+
+	void set_focus(bool flag) {
+		focused = flag;
+	}
+
+	bool get_focused() {
+		return focused;
+	}
+private:
+	std::string s{};
+	bool focused{};
+};
+
 int main() {
 	initENet();
 
@@ -328,29 +377,29 @@ int main() {
 	ENetPeer* serverPeer{}; //external for later use
 	std::string addressStr{};
 	//
+
+	TextField addressField;
 	while (!WindowShouldClose() && netMode == NetworkMode::CLIENT) {
 		ENetAddress targetAddr{};
 		ENetEvent connectEvent{};
 
 		int key = GetKeyPressed();
-		char c = GetCharPressed();
-		std::cout << (int)netMode << "\n";
-		std::cout << addressStr << "\n";
-
-		if (c <= '9' && c >= '0' || c == '.') {
-			addressStr.push_back(c);
-		}
-
+		
 		if (key == KeyboardKey::KEY_BACKSPACE) {
-			if (addressStr.size() != 0) addressStr.pop_back();
+			addressField.pop_back();
 		}
 
-		if (key == KeyboardKey::KEY_ENTER) break;
+		if (key == KeyboardKey::KEY_ENTER) {
+			break;
+		}
+
+		char c = (char)min(key, SCHAR_MAX);
+		addressField.append_if(c, [c]() { return c >= KeyboardKey::KEY_ZERO && c <= KeyboardKey::KEY_NINE || c == KeyboardKey::KEY_PERIOD; });
 
 		BeginDrawing();
 		ClearBackground(WHITE);
 
-		DrawText(addressStr.c_str(), 10, 10, 10, BLACK);
+		addressField.draw(10, 10);
 
 		EndDrawing();
 	}
