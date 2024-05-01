@@ -330,6 +330,7 @@ int main() {
 	Button btn_server({ 130, 10, 50, 50 }, BLUE, true);
 	
 	//select net mode and init localHost
+	label1_menu:
 	while (!WindowShouldClose()) {
 		if (btn_singleplayer.clicked()) {
 			netMode = NetworkMode::SINGLEPLAYER;
@@ -378,6 +379,7 @@ int main() {
 	std::string addressStr{};
 	//
 
+	
 	TextField addressField;
 	while (!WindowShouldClose() && netMode == NetworkMode::CLIENT) {
 		ENetAddress targetAddr{};
@@ -408,11 +410,7 @@ int main() {
 		ENetAddress targetAddr{};
 		ENetEvent connectEvent{};
 
-		/*std::string addressStr{};
-		std::cout << "\nPlease enter an IPv4 address to connect to:\n\tAddress: ";
-		std::cin >> addressStr;*/
-		
-		enet_address_set_host(&targetAddr, addressStr.c_str());
+		enet_address_set_host(&targetAddr, addressField.flush().c_str());
 		targetAddr.port = 7777;
 
 		serverPeer = enet_host_connect(localHost, &targetAddr, 2, 0);
@@ -430,7 +428,8 @@ int main() {
 			enet_peer_reset(serverPeer);
 
 			fprintf(stderr, "Server connection unsuccessful. Closing...\n");
-			exit(EXIT_SUCCESS);
+			goto label1_menu;
+			//exit(EXIT_SUCCESS);
 		}
 	}
 	
