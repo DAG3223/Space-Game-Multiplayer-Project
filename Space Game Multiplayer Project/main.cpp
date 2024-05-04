@@ -176,7 +176,7 @@ void initENet() {
 
 class Button {
 public:
-	Button(Rectangle rec, Color clr, bool enabled) {
+	Button(Rectangle rec, std::string txt, Color clr, bool enabled) {
 		hitbox = rec;
 		color = clr;
 		this->enabled = enabled;
@@ -204,6 +204,14 @@ public:
 	}
 
 private:
+	void updateDisplay() {
+		//text
+		//text size
+		//vertical padding 
+		//horizontal padding
+		//
+	}
+
 	Rectangle hitbox{ 0, 0, 10, 10 };
 	Color color{ RED };
 	bool enabled{};
@@ -270,35 +278,17 @@ private:
 *	server sends its data to all clients
 */
 
-class LocalHost {
+class LocalClient {
 public:
-	ENetHost* get_localHost() {
-		return localHost;
-	}
-
-protected:
-	LocalHost(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0) {
+	LocalClient(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0){
 		localAddress.host = ENET_HOST_ANY;
 		localAddress.port = 7777;
-	}
 
-	virtual ~LocalHost() { if (localHost != nullptr) enet_host_destroy(localHost); }
-
-public:
-	ENetAddress localAddress{};
-	ENetHost* localHost{};
-};
-
-class LocalClient : public LocalHost {
-public:
-	LocalClient(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0) :
-	LocalHost (connections, channels, limit_in, limit_out) {
-		localHost = enet_host_create(nullptr, connections, channels, limit_in, limit_out);
-		std::cout << localHost << "\n";
+		localHost = enet_host_create(NULL, connections, channels, limit_in, limit_out);
 	}
 
 	~LocalClient() {
-		//enet_host_destroy(localHost);
+		enet_host_destroy(localHost);
 	}
 
 	bool tryConnect(const char* address = "127.0.0.1", enet_uint16 port = 7777, int ms = 5000) {
@@ -306,7 +296,6 @@ public:
 		serverAddress.port = port;
 
 		serverPeer = enet_host_connect(localHost, &serverAddress, 2, 0);
-		std::cout << "Connecting " << localHost << "\n";
 		if (serverPeer == nullptr) {
 			fprintf(stderr, "No available peers for initiating an ENET connection.\n");
 			exit(EXIT_FAILURE);
@@ -352,15 +341,24 @@ public:
 	void sendToServer(ENetPacket* packet) {
 		enet_peer_send(serverPeer, 0, packet);
 	}
+
+	ENetHost* get_localHost() {
+		return localHost;
+	}
 private:
+	ENetAddress localAddress{};
+	ENetHost* localHost{};
+
 	ENetAddress serverAddress{};
 	ENetPeer* serverPeer{};
 };
 
-class LocalServer : public LocalHost {
+class LocalServer {
 public:
-	LocalServer(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0) :
-	LocalHost(connections, channels, limit_in, limit_out) {
+	LocalServer(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0) {
+		localAddress.host = ENET_HOST_ANY;
+		localAddress.port = 7777;
+
 		localHost = enet_host_create(&localAddress, connections, channels, limit_in, limit_out);
 	}
 
@@ -371,8 +369,13 @@ public:
 	void sendAll(ENetPacket* packet) {
 		enet_host_broadcast(localHost, 0, packet);
 	}
-private:
 
+	ENetHost* get_localHost() {
+		return localHost;
+	}
+private:
+	ENetAddress localAddress{};
+	ENetHost* localHost{};
 };
 
 int main() {
@@ -386,9 +389,9 @@ int main() {
 	std::unique_ptr<LocalClient> DAGLocalClient{};
 	std::unique_ptr<LocalServer> DAGLocalServer{};
 
-	Button btn_singleplayer({ 10, 10, 50, 50 }, RED, true);
-	Button btn_client({ 70, 10, 50, 50 }, GREEN, true);
-	Button btn_server({ 130, 10, 50, 50 }, BLUE, true);
+	Button btn_singleplayer({ 10, 10, 50, 50 }, "singleplayer", RED, true);
+	Button btn_client({ 70, 10, 50, 50 }, "client", GREEN, true);
+	Button btn_server({ 130, 10, 50, 50 }, "server", BLUE, true);
 	
 	//select net mode and init localHost
 label1_menu:
@@ -495,7 +498,8 @@ label1_menu:
 	
 	//connect client to server
 	if (netMode == NetworkMode::CLIENT) {
-		if (DAGLocalClient->tryConnect(addressField.flush().c_str(), 7777, 5000)) {
+		std::cout << "attempting to connect to address_" << addressField.data() << "_\n";
+		if (DAGLocalClient->tryConnect(addressField.flush().c_str(), 7777, 5000)) { //
 			printf("Successful connection to server!\n");
 		}
 		else {
@@ -540,9 +544,11 @@ label1_menu:
 				}
 				}
 			}
+			break;
 		}
 		case NetworkMode::SERVER: {
 			while (enet_host_service(DAGLocalServer->get_localHost(), &netEvent, 0) > 0) {
+				std::cout << "\n\nserver received event\n\n";
 				switch (netEvent.type) {
 				case ENET_EVENT_TYPE_CONNECT: {
 					if (netMode != NetworkMode::SERVER) break;
@@ -551,8 +557,6 @@ label1_menu:
 					packet.append("Welcome to the server!");
 
 					DAGLocalServer->sendAll(packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
-
-					//enet_host_broadcast(localHost, 0, packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
 					break;
 				}
 				case ENET_EVENT_TYPE_RECEIVE: {
@@ -570,41 +574,12 @@ label1_menu:
 					break;
 				}
 				}
+				break;
 			}
 		}
 		}
 
 		if (netMode != NetworkMode::SINGLEPLAYER) {
-			//while (enet_host_service(LocallocalHost, &netEvent, 0) > 0) {
-			//	switch (netEvent.type) {
-			//	case ENET_EVENT_TYPE_CONNECT: {
-			//		if (netMode != NetworkMode::SERVER) break;
-			//		
-			//		DAGPacket packet;
-			//		packet.append("Welcome to the server!");
-
-			//		DAGLocalServer->sendAll(packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
-			//		
-			//		//enet_host_broadcast(localHost, 0, packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
-			//		break;
-			//	}
-			//	case ENET_EVENT_TYPE_RECEIVE: {
-			//		DAGPacket rPacket(netEvent.packet);
-			//		std::vector<std::string> rData = rPacket.get_data_array();
-
-			//		float rX = std::atof(rData.at(0).c_str());
-			//		float rY = std::atof(rData.at(1).c_str());
-			//		float rA = std::atof(rData.at(2).c_str());
-
-			//		otherPlayer.set_hitbox({ rX, rY, otherPlayer.get_hitbox().width, otherPlayer.get_hitbox().height });
-			//		otherPlayer.set_angle(rA);
-
-			//		enet_packet_destroy(netEvent.packet);
-			//		break;
-			//	}
-			//	}
-			//}
-
 			//get x and y of localHost's ship, prepare as packet to send to peers
 			float sX = c.get_hitbox().x;
 			float sY = c.get_hitbox().y;
