@@ -1,19 +1,46 @@
 #pragma once
 #include "raylib.h"
-#include <string>
 
 class GUIButton {
 public:
 	GUIButton() {}
 
-	GUIButton(Vector2 pos, std::string txt, int txtSz, int vPad, int hPad, Color bgClr, Color fgClr, bool enabled) {
-		set_pos(pos);
-		set_text(txt);
-		set_textSize(txtSz);
-		set_bgClr(bgClr);
-		set_fgClr(fgClr);
-		set_vPad(vPad);
-		set_hPad(hPad);
+	GUIButton(Vector2 pos, const char* txt, int txtSz, int vPad, int hPad, Color bgClr, Color fgClr, bool enabled) {
+		hitbox.x = pos.x;
+		hitbox.y = pos.y;
+		
+		text = txt;
+
+		textSize = txtSz;
+
+		verticalPadding = vPad;
+		horizontalPadding = hPad;
+
+		updateRec();
+
+		this->bgClr = bgClr;
+		this->fgClr = fgClr;
+
+		this->enabled = enabled;
+	}
+
+	void init(Vector2 pos, const char* txt, int txtSz, int vPad, int hPad, Color bgClr, Color fgClr, bool enabled){
+		hitbox.x = pos.x;
+		hitbox.y = pos.y;
+
+		text = txt;
+
+		textSize = txtSz;
+
+		verticalPadding = vPad;
+		horizontalPadding = hPad;
+
+		updateRec();
+
+		this->bgClr = bgClr;
+		this->fgClr = fgClr;
+
+		this->enabled = enabled;
 	}
 
 	bool clicked() {
@@ -35,7 +62,7 @@ public:
 	void draw() {
 		if (!enabled) return;
 		DrawRectangleRec(hitbox, bgClr);
-		DrawText(text.c_str(), hitbox.x + horizontalPadding, hitbox.y + verticalPadding, textSize, fgClr);
+		DrawText(text, hitbox.x + horizontalPadding, hitbox.y + verticalPadding, textSize, fgClr);
 	}
 
 	void set_pos(Vector2 pos) {
@@ -44,7 +71,7 @@ public:
 		updateRec();
 	}
 
-	void set_text(std::string txt) {
+	void set_text(const char* txt) {
 		text = txt;
 		updateRec();
 	}
@@ -75,14 +102,14 @@ private:
 	Rectangle hitbox{ 0, 0, 0, 0 };
 	float verticalPadding{};
 	float horizontalPadding{};
-	std::string text{};
+	const char* text{};
 	int textSize{};
 	Color bgClr{ RED };
 	Color fgClr{ BLACK };
 	bool enabled{};
 
 	void updateRec() {
-		hitbox.width = 2 * horizontalPadding + MeasureText(text.c_str(), textSize);
+		hitbox.width = 2 * horizontalPadding + MeasureText(text, textSize);
 		hitbox.height = 2 * verticalPadding + textSize;
 	}
 };

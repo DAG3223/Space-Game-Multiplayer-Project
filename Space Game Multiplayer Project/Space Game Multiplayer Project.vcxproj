@@ -149,6 +149,8 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GUIButton.h" />
+    <ClInclude Include="GUITextField.h" />
+    <ClInclude Include="I_GUI.h" />
     <ClInclude Include="LocalClient.h" />
     <ClInclude Include="LocalServer.h" />
   </ItemGroup>

@@ -29,5 +29,11 @@
     <ClInclude Include="GUIButton.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="I_GUI.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GUITextField.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
