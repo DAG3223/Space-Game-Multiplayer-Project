@@ -7,21 +7,10 @@
 #include <raymath.h>
 #include <sstream>
 
-#define NOGDI
-#define CloseWindow CloseWinWindow
-#define ShowCursor ShowWinCursor
-#define LoadImage LoadWinImage
-#define DrawText DrawWinText
-#define DrawTextEx DrawWinTextEx
-#define PlaySound PlayWinSound
-#include <enet/enet.h>
-#undef CloseWindow
-#undef Rectangle
-#undef ShowCursor
-#undef LoadImage
-#undef DrawText
-#undef DrawTextEx
-#undef PlaySound
+#include "enetfix.h"
+#include "LocalClient.h"
+#include "LocalServer.h"
+#include "GUIButton.h"
 
 #include "DAGPacket.h"
 
@@ -41,7 +30,7 @@ float perSecond(float value) {
 	return value * GetFrameTime();                
 }
 
-float angleBetween(float x1, float y1, float x2, float y2) {
+float aneeeegleBetween(float x1, float y1, float x2, float y2) {
 	return atan2f(y2 - y1, x2 - x1);
 }
 
@@ -173,50 +162,6 @@ void initENet() {
 	std::cout << "ENET init successful.\n";
 }
 
-
-class Button {
-public:
-	Button(Rectangle rec, std::string txt, Color clr, bool enabled) {
-		hitbox = rec;
-		color = clr;
-		this->enabled = enabled;
-	}
-
-	bool clicked() {
-		return CheckCollisionPointRec(GetMousePosition(), hitbox) && IsMouseButtonPressed(MouseButton::MOUSE_BUTTON_LEFT) && enabled;
-	}
-
-	void enable() {
-		enabled = true;
-	}
-
-	void disable() {
-		enabled = false;
-	}
-
-	bool isEnabled() {
-		return enabled;
-	}
-
-	void draw() {
-		if (!enabled) return;
-		DrawRectangleRec(hitbox, color);
-	}
-
-private:
-	void updateDisplay() {
-		//text
-		//text size
-		//vertical padding 
-		//horizontal padding
-		//
-	}
-
-	Rectangle hitbox{ 0, 0, 10, 10 };
-	Color color{ RED };
-	bool enabled{};
-};
-
 class TextField {
 public:
 	template <typename _Pr>
@@ -278,106 +223,6 @@ private:
 *	server sends its data to all clients
 */
 
-class LocalClient {
-public:
-	LocalClient(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0){
-		localAddress.host = ENET_HOST_ANY;
-		localAddress.port = 7777;
-
-		localHost = enet_host_create(NULL, connections, channels, limit_in, limit_out);
-	}
-
-	~LocalClient() {
-		enet_host_destroy(localHost);
-	}
-
-	bool tryConnect(const char* address = "127.0.0.1", enet_uint16 port = 7777, int ms = 5000) {
-		enet_address_set_host(&serverAddress, address);
-		serverAddress.port = port;
-
-		serverPeer = enet_host_connect(localHost, &serverAddress, 2, 0);
-		if (serverPeer == nullptr) {
-			fprintf(stderr, "No available peers for initiating an ENET connection.\n");
-			exit(EXIT_FAILURE);
-		}
-
-		ENetEvent connectEvent{};
-		if (enet_host_service(localHost, &connectEvent, ms) > 0 && connectEvent.type == ENET_EVENT_TYPE_CONNECT) {
-			return true;
-		}
-		else {
-			enet_peer_reset(serverPeer);
-			return false;
-		}
-	}
-
-	bool tryDisconnect(int ms = 3000) {
-		ENetEvent disconnectEvent;
-
-		enet_peer_disconnect(serverPeer, 0);
-
-		while (enet_host_service(localHost, &disconnectEvent, ms) > 0){
-			switch (disconnectEvent.type){
-			case ENET_EVENT_TYPE_RECEIVE:
-				enet_packet_destroy(disconnectEvent.packet);
-				break;
-
-			case ENET_EVENT_TYPE_DISCONNECT:
-				puts("Disconnection succeeded.");
-				return true;
-			}
-		}
-
-		/* We've arrived here, so the disconnect attempt didn't */
-		/* succeed yet.  Force the connection down.             */
-		forceDisconnect();
-		return true;
-	}
-
-	void forceDisconnect() {
-		enet_peer_reset(serverPeer);
-	}
-
-	void sendToServer(ENetPacket* packet) {
-		enet_peer_send(serverPeer, 0, packet);
-	}
-
-	ENetHost* get_localHost() {
-		return localHost;
-	}
-private:
-	ENetAddress localAddress{};
-	ENetHost* localHost{};
-
-	ENetAddress serverAddress{};
-	ENetPeer* serverPeer{};
-};
-
-class LocalServer {
-public:
-	LocalServer(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0) {
-		localAddress.host = ENET_HOST_ANY;
-		localAddress.port = 7777;
-
-		localHost = enet_host_create(&localAddress, connections, channels, limit_in, limit_out);
-	}
-
-	~LocalServer() {
-		enet_host_destroy(localHost);
-	}
-
-	void sendAll(ENetPacket* packet) {
-		enet_host_broadcast(localHost, 0, packet);
-	}
-
-	ENetHost* get_localHost() {
-		return localHost;
-	}
-private:
-	ENetAddress localAddress{};
-	ENetHost* localHost{};
-};
-
 int main() {
 	initENet();
 
@@ -389,9 +234,9 @@ int main() {
 	std::unique_ptr<LocalClient> DAGLocalClient{};
 	std::unique_ptr<LocalServer> DAGLocalServer{};
 
-	Button btn_singleplayer({ 10, 10, 50, 50 }, "singleplayer", RED, true);
-	Button btn_client({ 70, 10, 50, 50 }, "client", GREEN, true);
-	Button btn_server({ 130, 10, 50, 50 }, "server", BLUE, true);
+	GUIButton btn_singleplayer({ 10, 10 }, "singleplayer", 20, 4, 4, RED, BLACK, true);
+	GUIButton btn_client({ 10, 70 }, "client", 20, 4, 4, GREEN, BLACK, true);
+	GUIButton btn_server({ 10, 130 }, "server", 20, 4, 4, BLUE, BLACK, true);
 	
 	//select net mode and init localHost
 label1_menu:
@@ -437,7 +282,6 @@ label1_menu:
 	btn_client.disable();
 	btn_server.disable();
 
-	//localHost == nullptr
 	switch (netMode) {
 	case NetworkMode::CLIENT:
 		if (DAGLocalClient == nullptr) {
@@ -457,15 +301,6 @@ label1_menu:
 	default:
 		printf("localHost initialized properly.\n");
 	}
-
-	/*if (DAGLocalHost == nullptr && netMode != NetworkMode::SINGLEPLAYER) {
-		fprintf(stderr, "Failed to initialize localHost for networking.\n");
-		exit(EXIT_FAILURE);
-	}
-	else {
-		printf("localHost initialized properly.\n");
-	}*/
-	//done initializing localHost
 
 	//connection handling
 	//TODO: make code return to input page if connection fails
