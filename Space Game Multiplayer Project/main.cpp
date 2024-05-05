@@ -16,6 +16,9 @@
 #include "GUIButton.h"
 #include "GUITextField.h"
 
+#include "Utils.h"
+#include "Component.h"
+#include "Player.h"
 
 
 //Phase 1 Development:
@@ -30,126 +33,48 @@
 */
 
 //used to align value changes to be done every second, non-frame-dependent
-float perSecond(float value) {
-	return value * GetFrameTime();                
-}
 
-float angleBetween(float x1, float y1, float x2, float y2) {
-	return atan2f(y2 - y1, x2 - x1);
-}
 
-class Component {
-public:
-	Component(float tVel) {
-		hitbox = { 0.0f, 0.0f, 32.0f, 32.0f };
-		maxVelocity = tVel;
-	}
 
-	void control() {
-		//control linear acceleration
-		acceleration = 0;
-		if (IsKeyDown(KeyboardKey::KEY_W)) {
-			acceleration += 16;
-		}
-		if (IsKeyDown(KeyboardKey::KEY_S)) {
-			acceleration -= 16;
-		}
-
-		//change and clamp velocity, (v = v0 + at)
-		velocity += perSecond(acceleration);
-		velocity = fminf(velocity, maxVelocity);
-		velocity = fmaxf(velocity, -maxVelocity);
-
-		//move
-		hitbox.x += perSecond(velocity) * cosf(angle);
-		hitbox.y += perSecond(velocity) * sinf(angle);
-
-		if (IsKeyDown(KeyboardKey::KEY_A)) {
-			angle -= perSecond(PI); //turn left
-		}
-		
-		if (IsKeyDown(KeyboardKey::KEY_D)) {
-			angle += perSecond(PI); //turn right
-		}
-	}
-
-	void draw() {
-		Rectangle display = { hitbox.x + hitbox.width / 2.0f, hitbox.y + hitbox.height / 2.0f, hitbox.width, hitbox.height }; //display oriented inside hitbox
-		Vector2 center = { hitbox.width / 2.0f, hitbox.height / 2.0f }; //offset from origin of hitbox
-		DrawRectanglePro(display, center, RAD2DEG * angle, WHITE);
-
-		//debug displays
-		//DrawRectangleLinesEx(hitbox, 2.0f, RED);
-		//DrawCircle(hitbox.x, hitbox.y, 2.0f, RED);
-		//DrawLine(display.x, display.y, display.x + 30 * cosf(angle), display.y + 30 * sinf(angle), RED);
-	}
-
-	void drawHUD(int x, int y) {
-		DrawText(TextFormat("a: %3.1f px/s^2", acceleration), 10 + x, 10 + y, 10, WHITE);
-		DrawText(TextFormat("v: %4.1f / %4.1f px/s", velocity, maxVelocity), 10 + x, 30 + y, 10, WHITE);
-		DrawText(TextFormat("x: %.1f, y: %.1f", hitbox.x, hitbox.y), 10 + x, 50 + y, 10, WHITE);
-		DrawText(TextFormat("angle: %.2f", fmodf(angle, 2 * PI)), 10 + x, 70 + y, 10, WHITE);
-	}
-
-	const Rectangle& get_hitbox() {
-		return hitbox;
-	}
-
-	void set_hitbox(const Rectangle& rec) {
-		hitbox = rec;
-	}
-
-	float get_angle() {
-		return angle;
-	}
-
-	void set_angle(float radians) {
-		angle = radians;
-	}
-private:
-	Rectangle hitbox{};
-	float angle{};
-	float velocity{};
-	float maxVelocity{}; //arbitrary
-	float acceleration{};
-};
 
 //ship controlled by a player
-class Ship {
-public:
-	Ship(int hp) {
-		this->hp = hp;
-	}
+//class Ship {
+//public:
+//	Ship(int hp) {
+//		this->hp = hp;
+//	}
+//
+//	void control() {
+//		component->control();
+//	}
+//
+//	void draw() {
+//		component->draw();
+//	}
+//
+//	void drawHUD(int x, int y) {
+//		DrawText(TextFormat("a: %3.1f px/s^2", acceleration), 10 + x, 10 + y, 10, WHITE);
+//		DrawText(TextFormat("v: %4.1f / %4.1f px/s", velocity, maxVelocity), 10 + x, 30 + y, 10, WHITE);
+//		DrawText(TextFormat("x: %.1f, y: %.1f", component->get_hitbox().x, component->get_hitbox().y), 10 + x, 50 + y, 10, WHITE);
+//		DrawText(TextFormat("angle: %.2f", angle), 10 + x, 70 + y, 10, WHITE);
+//	}
+//
+//	//void update() //general update function
+//	//void component_update() // to be called when a component is destroyed, when ships are multi-component.
+//private:
+//	Component* component{};
+//	//DAG::SMatrix<Component*>
+//
+//	float angle{};
+//	float velocity{};
+//	float maxVelocity{}; //arbitrary
+//	float acceleration{};
+//
+//	int hp{};
+//	//std::list<Component> components;
+//};
 
-	void control() {
-		component->control();
-	}
 
-	void draw() {
-		component->draw();
-	}
-
-	void drawHUD(int x, int y) {
-		DrawText(TextFormat("a: %3.1f px/s^2", acceleration), 10 + x, 10 + y, 10, WHITE);
-		DrawText(TextFormat("v: %4.1f / %4.1f px/s", velocity, maxVelocity), 10 + x, 30 + y, 10, WHITE);
-		DrawText(TextFormat("x: %.1f, y: %.1f", component->get_hitbox().x, component->get_hitbox().y), 10 + x, 50 + y, 10, WHITE);
-		DrawText(TextFormat("angle: %.2f", angle), 10 + x, 70 + y, 10, WHITE);
-	}
-
-	//void update() //general update function
-	//void component_update() // to be called when a component is destroyed, when ships are multi-component.
-private:
-	Component* component{};
-	//DAG::SMatrix<Component*>
-
-	float angle{};
-	float velocity{};
-	float maxVelocity{}; //arbitrary
-	float acceleration{};
-
-	int hp{};
-	//std::list<Component> components;
-};
 
 enum class NetworkMode {
 	SINGLEPLAYER = 0,
@@ -178,7 +103,7 @@ void initENet() {
 *	server sends its data to all clients
 */
 
-enum PROGRAM_STATES {
+enum class ProgramState {
 	TITLE,
 	NET_SELECT,
 	IP_INPUT,
@@ -311,20 +236,29 @@ int main() {
 	InitWindow(800, 800, "Space Game Multiplayer Project");
 	SetTargetFPS(60);
 
+	ProgramState programState = ProgramState::TITLE;
+	programState = ProgramState::NET_SELECT;
+
 	NetworkMode netMode = NetworkMode::SINGLEPLAYER;
 
-	std::unique_ptr<LocalClient> DAGLocalClient{};
-	std::unique_ptr<LocalServer> DAGLocalServer{};
-
-	int programState = TITLE;
-	programState = NET_SELECT;
-
-	//GUITextField addressField;
 	GUI_IPInput gui_IPInput;
 	GUI_NetSelect guiSelectorTest(&netMode);
 
-	Component c(480.0f);
-	Component otherPlayer(480.0f);
+	std::unique_ptr<LocalClient> DAGLocalClient{};
+	std::unique_ptr<LocalServer> DAGLocalServer{};	
+
+	Component player0(480.0f);
+	Component player1(480.0f);
+	Component player2(480.0f);
+
+	Component* localPlayer{};
+	//TODO: change to a list of available id's, as some may open up as a result of disconnections
+	int connectedPlayers = 0;
+
+	std::vector<Component*> players{};
+
+	Player p;
+	p.set_speed(8);
 
 	ENetEvent netEvent{};
 	while (!WindowShouldClose()) {
@@ -332,7 +266,7 @@ int main() {
 		ClearBackground(WHITE);
 
 		switch (programState) {
-		case PROGRAM_STATES::NET_SELECT: {
+		case ProgramState::NET_SELECT: {
 			DAGLocalClient.reset();
 			DAGLocalServer.reset();
 
@@ -343,15 +277,17 @@ int main() {
 			if (guiSelectorTest.isNetModeSet()) {
 				switch (netMode) {
 				case NetworkMode::SINGLEPLAYER:
-					programState = PROGRAM_STATES::GAME;
+					programState = ProgramState::GAME;
 					break;
 				case NetworkMode::CLIENT:
 					DAGLocalClient = std::make_unique<LocalClient>(1, 2, 0, 0);
-					programState = PROGRAM_STATES::IP_INPUT;
+					programState = ProgramState::IP_INPUT;
 					break;
 				case NetworkMode::SERVER:
 					DAGLocalServer = std::make_unique<LocalServer>(4, 2, 0, 0);
-					programState = PROGRAM_STATES::GAME;
+					players.resize(DAGLocalServer->get_localHost()->peerCount, nullptr);
+					programState = ProgramState::GAME;
+					localPlayer = &player0;
 					break;
 				}
 			}
@@ -362,7 +298,7 @@ int main() {
 			
 			break;
 		}
-		case PROGRAM_STATES::IP_INPUT: {
+		case ProgramState::IP_INPUT: {
 			gui_IPInput.init();
 
 			gui_IPInput.update();
@@ -370,8 +306,17 @@ int main() {
 			if (gui_IPInput.wasEnterPressed()) {
 				if (DAGLocalClient->tryConnect(gui_IPInput.get_input().c_str(), 7777, 5000)) {
 					printf("Successful connection to server!\n");
-					programState = PROGRAM_STATES::GAME;
+					programState = ProgramState::GAME;
 					gui_IPInput.deinit();
+
+					switch (DAGLocalClient->get_clientID()) {
+					case 1:
+						localPlayer = &player1;
+						break;
+					case 2:
+						localPlayer = &player2;
+						break;
+					}
 				}
 				else {
 					fprintf(stderr, "Server connection unsuccessful.\n");
@@ -385,7 +330,7 @@ int main() {
 			
 			break;
 		}
-		case PROGRAM_STATES::GAME: {
+		case ProgramState::GAME: {
 			ClearBackground(BLACK);
 
 			switch (netMode) {
@@ -394,16 +339,49 @@ int main() {
 					switch (netEvent.type) {
 					case ENET_EVENT_TYPE_RECEIVE: {
 						DAGPacket rPacket(netEvent.packet);
-						std::vector<std::string> rData = rPacket.get_data_array();
+						//std::cout << "received from server: " << rPacket.get_data() << "\n";
+						const std::vector<std::string>& rData = rPacket.get_data_array();
 
-						float rX = std::atof(rData.at(0).c_str());
-						float rY = std::atof(rData.at(1).c_str());
-						float rA = std::atof(rData.at(2).c_str());
+						int rID = std::atoi(rPacket.get_word(0));
+						float rX = std::atof(rPacket.get_word(1));
+						float rY = std::atof(rPacket.get_word(2));
+						float rA = std::atof(rPacket.get_word(3));
 
-						otherPlayer.set_hitbox({ rX, rY, otherPlayer.get_hitbox().width, otherPlayer.get_hitbox().height });
-						otherPlayer.set_angle(rA);
+						//ignore packet if data is about localClient
+						if (rID == DAGLocalClient->get_clientID()) {
+							enet_packet_destroy(netEvent.packet);
+							break;
+						}
+
+						Component* playerToUpdate{};
+						switch (rID) {
+						case 0:
+							playerToUpdate = &player0;
+							break;
+						case 1:
+							playerToUpdate = &player1;
+							break;
+						case 2:
+							playerToUpdate = &player2;
+							break;
+						}
+
+						//client updates its own data for _rID_
+						playerToUpdate->set_hitbox({ rX, rY, playerToUpdate->get_hitbox().width, playerToUpdate->get_hitbox().height });
+						playerToUpdate->set_angle(rA);
+						printf("successfully updated player client _%d_ with received data.\n", rID);
+
+						//server sends packet to all peers
+
+						//otherPlayer.set_hitbox({ rX, rY, otherPlayer.get_hitbox().width, otherPlayer.get_hitbox().height });
+						//otherPlayer.set_angle(rA);
 
 						enet_packet_destroy(netEvent.packet);
+
+						/*player0.set_hitbox({ rX, rY, player0.get_hitbox().width, player0.get_hitbox().height });
+						player0.set_angle(rA);
+
+						enet_packet_destroy(netEvent.packet);*/
 						break;
 					}
 					}
@@ -412,33 +390,69 @@ int main() {
 			}
 			case NetworkMode::SERVER: {
 				while (enet_host_service(DAGLocalServer->get_localHost(), &netEvent, 0) > 0) {
-					std::cout << "\n\nserver received event\n\n";
 					switch (netEvent.type) {
 					case ENET_EVENT_TYPE_CONNECT: {
-						if (netMode != NetworkMode::SERVER) break;
-
 						DAGPacket packet;
-						packet.append("Welcome to the server!");
 
-						DAGLocalServer->sendAll(packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
+						int incomingID = -1;
+						//client id will be set to the first index in players at which the value is nullptr
+						for (int i = 0; i < players.size(); i++) {
+							if (players.at(i) == nullptr) {
+								incomingID = i;
+							}
+						}
+
+						packet.append(incomingID);
+
+						netEvent.peer->data = (void*)(incomingID); //assigns new client id to newly connected peer
+
+						DAGLocalServer->sendTo(netEvent.peer, 0, packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
+						//DAGLocalServer->sendAll(packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
 						break;
 					}
 					case ENET_EVENT_TYPE_RECEIVE: {
+						//SERVER DATA RECEIVE PROCESS: (DOES NOT HANDLE DISCONNECTIONS)
+						//server receives data from client _id_
+						//server updates its own data for _id_ first
+						//server then needs to send a packet to all peers 
+						//	packet contains the received data
+						//	client _id_ will intentionally ignore and delete this packet
+
+						//std::cout << "received packet from client _" << (int)(netEvent.peer->data) << "_\n";
+						
 						DAGPacket rPacket(netEvent.packet);
-						std::vector<std::string> rData = rPacket.get_data_array();
+						std::cout << "received from client _" << (int)(netEvent.peer->data) << "_: " << rPacket.get_data() << "\n";
+						const std::vector<std::string>& rData = rPacket.get_data_array();
 
-						float rX = std::atof(rData.at(0).c_str());
-						float rY = std::atof(rData.at(1).c_str());
-						float rA = std::atof(rData.at(2).c_str());
+						//received data from client _rID_
+						int rID = std::atoi(rData.at(0).c_str());
+						float rX = std::atof(rData.at(1).c_str());
+						float rY = std::atof(rData.at(2).c_str());
+						float rA = std::atof(rData.at(3).c_str());
 
-						otherPlayer.set_hitbox({ rX, rY, otherPlayer.get_hitbox().width, otherPlayer.get_hitbox().height });
-						otherPlayer.set_angle(rA);
+						//selecting which player to update
+						Component* playerToUpdate{};
+						switch (rID) {
+						case 1:
+							playerToUpdate = &player1;
+							break;
+						case 2:
+							playerToUpdate = &player2;
+							break;
+						}
 
-						enet_packet_destroy(netEvent.packet);
+						//server updated its own data for _rID_
+						playerToUpdate->set_hitbox({ rX, rY, playerToUpdate->get_hitbox().width, playerToUpdate->get_hitbox().height });
+						playerToUpdate->set_angle(rA);
+
+						//printf("successfully updated player client _%d_ with received data.\n", rID);
+
+						//server sends packet to all peers
+						DAGLocalServer->sendAll(netEvent.packet);
 						break;
 					}
 					case ENET_EVENT_TYPE_DISCONNECT:
-						//printf("%s disconnected.\n", netEvent.peer->data);
+						printf("\n\n\npeer _%d_ disconnected.\n\n\n\n", (int)netEvent.peer->data);
 
 						/* Reset the peer's client information. */
 
@@ -450,13 +464,31 @@ int main() {
 			}
 			}
 
+			//c.control();
+			//p.move();
+			localPlayer->control();
+
 			if (netMode != NetworkMode::SINGLEPLAYER) {
 				//get x and y of localHost's ship, prepare as packet to send to peers
-				float sX = c.get_hitbox().x;
-				float sY = c.get_hitbox().y;
-				float sAngle = c.get_angle();
+				
+				int sID;
+				switch (netMode) {
+				case NetworkMode::CLIENT:
+					sID = DAGLocalClient->get_clientID();
+					//enet_peer_send(serverPeer, 0, packet);
+					break;
+				case NetworkMode::SERVER:
+					sID = 0;
+					//enet_host_broadcast(localHost, 0, packet);
+					break;
+				}
+				
+				float sX = localPlayer->get_hitbox().x;
+				float sY = localPlayer->get_hitbox().y;
+				float sAngle = localPlayer->get_angle();
 
 				DAGPacket sPacket;
+				sPacket.append(sID);
 				sPacket.append(TextFormat("%.1f", sX));
 				sPacket.append(TextFormat("%.1f", sY));
 				sPacket.append(TextFormat("%.2f", fmodf(sAngle, 2 * PI)));
@@ -474,14 +506,19 @@ int main() {
 				}
 			}
 
-			c.control();
-
-			c.draw();
-			c.drawHUD(0, 0);
+			
+			localPlayer->draw();
+			localPlayer->drawHUD(10, 10);
+			//c.draw();
+			//p.draw();
+			//c.drawHUD(0, 0);
 
 			if (netMode != NetworkMode::SINGLEPLAYER) {
-				otherPlayer.draw();
-				otherPlayer.drawHUD(0, 600);
+				//otherPlayer.draw();
+				//otherPlayer.drawHUD(0, 600);
+				player0.draw();
+				player1.draw();
+				player2.draw();
 			}
 			break;
 		}

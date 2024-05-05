@@ -1,17 +1,20 @@
+#pragma once
 #include <string>
 #include <sstream>
 #include <vector>
-#include <enet/enet.h>
+#include "enetfix.h"
 
 class DAGPacket {
 public:
 	DAGPacket() {}
 
 	DAGPacket(ENetPacket* inPacket) {
-		const char* cData = (const char*)inPacket->data;
+		const char* cData = reinterpret_cast<const char*>(inPacket->data);
+		printf("Initializing DAGPacket with data:\"%s\"\n", cData);
+		//std::cout << "Initializing DAGPacket with data:\"" << cData << "\"\n";
 		data = cData;
 
-		std::string line{};
+		std::string line{""};
 		std::stringstream reader(data);
 
 		while (reader >> line) {
@@ -42,6 +45,7 @@ public:
 	}
 
 	ENetPacket* makePacket(enet_uint32 packetFlags) {
+		std::cout << "making packet: \"" << data << "\" size: " << strlen(data.c_str()) + 1 << "\n";
 		return enet_packet_create(data.c_str(), strlen(data.c_str()) + 1, packetFlags);
 	}
 
@@ -53,8 +57,10 @@ public:
 		return dataArr;
 	}
 
-
+	const char* get_word(int i) {
+		return dataArr.at(i).c_str();
+	}
 private:
-	std::string data{};
+	std::string data{""};
 	std::vector<std::string> dataArr{};
 };

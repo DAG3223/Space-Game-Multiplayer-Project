@@ -1,4 +1,7 @@
 #include "enetfix.h"
+#include <vector>
+#include "Player.h"
+
 
 class LocalServer {
 public:
@@ -17,10 +20,21 @@ public:
 		enet_host_broadcast(localHost, 0, packet);
 	}
 
+	void sendTo(ENetPeer* peer, enet_uint8 channels, ENetPacket* packet) {
+		enet_peer_send(peer, channels, packet);
+	}
+
 	ENetHost* get_localHost() {
 		return localHost;
+	}
+
+	void addClient() {
+
 	}
 private:
 	ENetAddress localAddress{};
 	ENetHost* localHost{};
+
+	std::vector<Player> players{};
+
 };

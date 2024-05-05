@@ -1,5 +1,9 @@
-#include "enetfix.h"
+#pragma once
 #include <iostream>
+#include <vector>
+#include "enetfix.h"
+#include "DAGPacket.h"
+#include "Player.h"
 
 class LocalClient {
 public:
@@ -25,7 +29,22 @@ public:
 		}
 
 		ENetEvent connectEvent{};
+
 		if (enet_host_service(localHost, &connectEvent, ms) > 0 && connectEvent.type == ENET_EVENT_TYPE_CONNECT) {
+			//sets client id for this client
+			if (enet_host_service(localHost, &connectEvent, ms) > 0 && connectEvent.type == ENET_EVENT_TYPE_RECEIVE) {
+				DAGPacket received(connectEvent.packet);
+
+				clientID = std::atoi(received.get_data().c_str());
+				printf("my client id is %d!", clientID);
+
+				enet_packet_destroy(connectEvent.packet);
+				return true;
+			}
+			else {
+				enet_peer_reset(serverPeer);
+				return false;
+			}
 			return true;
 		}
 		else {
@@ -68,10 +87,20 @@ public:
 	ENetHost* get_localHost() {
 		return localHost;
 	}
+
+	int get_clientID() {
+		return clientID;
+	}
+	/*bool set_clientID(int ms) {
+
+	}*/
 private:
 	ENetAddress localAddress{};
 	ENetHost* localHost{};
 
 	ENetAddress serverAddress{};
 	ENetPeer* serverPeer{};
+
+	int clientID{};
+	std::vector<Player> players{};
 };
