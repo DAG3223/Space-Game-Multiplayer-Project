@@ -4,17 +4,19 @@
 #include "enetfix.h"
 #include "DAGPacket.h"
 #include "Player.h"
+#include "GameNetworkGlobals.h"
+#include "NetTypes.h"
 
-class LocalClient {
+class Client {
 public:
-	LocalClient(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0) {
+	Client(size_t connections = 1, size_t channels = 2, enet_uint32 limit_in = 0, enet_uint32 limit_out = 0) {
 		localAddress.host = ENET_HOST_ANY;
 		localAddress.port = 7777;
 
 		localHost = enet_host_create(NULL, connections, channels, limit_in, limit_out);
 	}
 
-	~LocalClient() {
+	~Client() {
 		enet_host_destroy(localHost);
 	}
 
@@ -28,29 +30,36 @@ public:
 			exit(EXIT_FAILURE);
 		}
 
-		ENetEvent connectEvent{};
-
-		if (enet_host_service(localHost, &connectEvent, ms) > 0 && connectEvent.type == ENET_EVENT_TYPE_CONNECT) {
-			//sets client id for this client
-			if (enet_host_service(localHost, &connectEvent, ms) > 0 && connectEvent.type == ENET_EVENT_TYPE_RECEIVE) {
-				DAGPacket received(connectEvent.packet);
-
-				clientID = std::atoi(received.get_data().c_str());
-				printf("my client id is %d!", clientID);
-
-				enet_packet_destroy(connectEvent.packet);
-				return true;
-			}
-			else {
-				enet_peer_reset(serverPeer);
-				return false;
-			}
-			return true;
-		}
-		else {
+		ENetEvent netEvent{};
+		//if service failed or had no message, or connectEvent is not a connection event
+		if (enet_host_service(localHost, &netEvent, ms) <= 0 || netEvent.type != ENET_EVENT_TYPE_CONNECT) {
 			enet_peer_reset(serverPeer);
 			return false;
 		}
+
+		//sets client id for this client
+		if (enet_host_service(localHost, &netEvent, ms) <= 0 || netEvent.type != ENET_EVENT_TYPE_RECEIVE) {
+			enet_peer_reset(serverPeer);
+			return false;
+		}
+		
+		DAGPacket received(netEvent.packet);
+
+		if (received.get_int(0) != SERVER_ID &&
+			received.get_int(1) != (int)NetworkMessage::INFORM_PLAYER) {
+			enet_peer_reset(serverPeer);
+			return false;
+		}
+
+		clientID = received.get_int(2);
+		printf("my client id is %d!", clientID);
+
+		playerLimit = received.get_int(3);
+
+		connected = true;
+
+		enet_packet_destroy(netEvent.packet);
+		return true;
 	}
 
 	bool tryDisconnect(int ms = 3000) {
@@ -66,6 +75,7 @@ public:
 
 			case ENET_EVENT_TYPE_DISCONNECT:
 				puts("Disconnection succeeded.");
+				connected = false;
 				return true;
 			}
 		}
@@ -73,11 +83,13 @@ public:
 		/* We've arrived here, so the disconnect attempt didn't */
 		/* succeed yet.  Force the connection down.             */
 		forceDisconnect();
+		connected = false;
 		return true;
 	}
 
 	void forceDisconnect() {
 		enet_peer_reset(serverPeer);
+		connected = false;
 	}
 
 	void sendToServer(ENetPacket* packet) {
@@ -91,6 +103,14 @@ public:
 	int get_clientID() {
 		return clientID;
 	}
+
+	int get_playerLimit() {
+		return playerLimit;
+	}
+
+	bool isConnected(){
+		return connected;
+	}
 	/*bool set_clientID(int ms) {
 
 	}*/
@@ -102,5 +122,8 @@ private:
 	ENetPeer* serverPeer{};
 
 	int clientID{};
-	std::vector<Player> players{};
+	unsigned int playerLimit{};
+
+	bool connected{};
+	//std::vector<Player> players{};
 };

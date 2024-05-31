@@ -149,11 +149,13 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Component.h" />
+    <ClInclude Include="GameNetworkGlobals.h" />
     <ClInclude Include="GUIButton.h" />
     <ClInclude Include="GUITextField.h" />
     <ClInclude Include="I_GUI.h" />
-    <ClInclude Include="LocalClient.h" />
-    <ClInclude Include="LocalServer.h" />
+    <ClInclude Include="Client.h" />
+    <ClInclude Include="NetTypes.h" />
+    <ClInclude Include="Server.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="Utils.h" />
   </ItemGroup>

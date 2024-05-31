@@ -1,15 +1,15 @@
 #include <iostream>
+#include <algorithm>
 #include <vector>
-#include <string>
-#include <cmath>
 #include <list>
+#include <string>
+
 #include "raylib.h"
 #include "raymath.h"
-#include <sstream>
 
 #include "enetfix.h"
-#include "LocalClient.h"
-#include "LocalServer.h"
+#include "Client.h"
+#include "Server.h"
 #include "DAGPacket.h"
 
 #include "I_GUI.h"
@@ -20,6 +20,15 @@
 #include "Component.h"
 #include "Player.h"
 
+#include "GameNetworkGlobals.h"
+#include "NetTypes.h"
+
+enum class ProgramState {
+	TITLE,
+	NET_SELECT,
+	IP_INPUT,
+	GAME
+};
 
 //Phase 1 Development:
 /*
@@ -32,56 +41,6 @@
 * ships explode when out of health
 */
 
-//used to align value changes to be done every second, non-frame-dependent
-
-
-
-
-//ship controlled by a player
-//class Ship {
-//public:
-//	Ship(int hp) {
-//		this->hp = hp;
-//	}
-//
-//	void control() {
-//		component->control();
-//	}
-//
-//	void draw() {
-//		component->draw();
-//	}
-//
-//	void drawHUD(int x, int y) {
-//		DrawText(TextFormat("a: %3.1f px/s^2", acceleration), 10 + x, 10 + y, 10, WHITE);
-//		DrawText(TextFormat("v: %4.1f / %4.1f px/s", velocity, maxVelocity), 10 + x, 30 + y, 10, WHITE);
-//		DrawText(TextFormat("x: %.1f, y: %.1f", component->get_hitbox().x, component->get_hitbox().y), 10 + x, 50 + y, 10, WHITE);
-//		DrawText(TextFormat("angle: %.2f", angle), 10 + x, 70 + y, 10, WHITE);
-//	}
-//
-//	//void update() //general update function
-//	//void component_update() // to be called when a component is destroyed, when ships are multi-component.
-//private:
-//	Component* component{};
-//	//DAG::SMatrix<Component*>
-//
-//	float angle{};
-//	float velocity{};
-//	float maxVelocity{}; //arbitrary
-//	float acceleration{};
-//
-//	int hp{};
-//	//std::list<Component> components;
-//};
-
-
-
-enum class NetworkMode {
-	SINGLEPLAYER = 0,
-	CLIENT,
-	SERVER
-};
-
 void initENet() {
 	if (enet_initialize() != 0) {
 		fprintf(stderr, "uh oh! enet didn't initialize!\n");
@@ -90,25 +49,6 @@ void initENet() {
 	atexit(enet_deinitialize);
 	std::cout << "ENET init successful.\n";
 }
-
-//
-/*NETWORK LOOP
-* 
-* client connects to server
-* server adds client to vector, returns id to client
-* 
-* loop:
-*	client sends packet to server
-*	server's for client is updated
-*	server sends its data to all clients
-*/
-
-enum class ProgramState {
-	TITLE,
-	NET_SELECT,
-	IP_INPUT,
-	GAME
-};
 
 class GUI_NetSelect : public I_GUI {
 public:
@@ -230,7 +170,107 @@ private:
 	bool enterPressed{};
 };
 
+class Projectile {
+public:
+	Projectile() {}
+
+	Projectile(float x, float y, float v, float a, netID_t id) {
+		hitbox.x = x;
+		hitbox.y = y;
+		velocity = v;
+		angle = a;
+		netID = id;
+	}
+
+	bool isTouching(Rectangle& rec) {
+		return CheckCollisionRecs(hitbox, rec);
+	}
+
+	void move() {
+		hitbox.x += perSecond(velocity) * cosf(angle);
+		hitbox.y += perSecond(velocity) * sinf(angle);
+	}
+
+	void draw() {
+		DrawRectangleRec(hitbox, RED);
+	}
+
+	double get_initTime() {
+		return initTime;
+	}
+
+	netID_t get_netID() {
+		return netID;
+	}
+private:
+	Rectangle hitbox{0, 0, 8, 8};
+	float angle{};
+	float velocity{};
+	double initTime{ GetTime() };
+	netID_t netID{};
+};
+
+class ProjectileManager {
+public:
+	ProjectileManager(size_t maxProjectiles) {
+		projectiles.resize(maxProjectiles);
+		std::fill(projectiles.begin(), projectiles.end(), nullptr);
+	}
+
+	size_t add(float x, float y, float v, float a) {
+		auto it = std::find(projectiles.begin(), projectiles.end(), nullptr);
+
+		size_t id = static_cast<size_t>(std::distance(projectiles.begin(), it));
+		*it = std::move(std::make_unique<Projectile>(x, y, v, a, id));
+		projectileCount++;
+		
+		return id;
+	}
+
+	void set(size_t id, float x, float y, float v, float a) {
+		if (projectiles.at(id) == nullptr) projectileCount++;
+		
+		projectiles.at(id).reset();
+		projectiles.at(id) = std::move(std::make_unique<Projectile>(x, y, v, a, id));
+	}
+
+	bool canAdd() {
+		return std::find(projectiles.begin(), projectiles.end(), nullptr) != projectiles.end();
+	}
+
+	void kill(size_t netID) {
+		projectiles.at(netID).reset();
+	}
+
+	void killOld(double seconds = 20.0f) {
+		forAll([this, seconds](std::unique_ptr<Projectile>& p) { if ((GetTime() - p->get_initTime()) > seconds) { p.reset(); projectileCount--; } });
+	}
+
+	void drawAll() {
+		forAll([](std::unique_ptr<Projectile>& p) { p->draw(); });
+	}
+
+	void moveAll() {
+		forAll([](std::unique_ptr<Projectile>& p) { p->move(); });
+	}
+
+	//inefficient, will be ran multiple times to perform all collisions
+	auto findColliding(Rectangle& hitbox) {
+		return std::find_if(projectiles.begin(), projectiles.end(), [&hitbox](std::unique_ptr<Projectile>& p) { return p->isTouching(hitbox); });
+	}
+
+private:
+	template<typename _Fn>
+	void forAll(_Fn func) {
+		std::for_each(projectiles.begin(), projectiles.end(), [func](std::unique_ptr<Projectile>& p) {if (p == nullptr) return; func(p); });
+	}
+
+	std::vector<std::unique_ptr<Projectile>> projectiles{};
+	size_t projectileCount = 0;
+};
+
 int main() {
+	//INITIALIZATION
 	initENet();
 
 	InitWindow(800, 800, "Space Game Multiplayer Project");
@@ -244,22 +284,15 @@ int main() {
 	GUI_IPInput gui_IPInput;
 	GUI_NetSelect guiSelectorTest(&netMode);
 
-	std::unique_ptr<LocalClient> DAGLocalClient{};
-	std::unique_ptr<LocalServer> DAGLocalServer{};	
-
-	Component player0(480.0f);
-	Component player1(480.0f);
-	Component player2(480.0f);
+	std::unique_ptr<Client> localClient{};
+	std::unique_ptr<Server> localServer{};
 
 	Component* localPlayer{};
-	//TODO: change to a list of available id's, as some may open up as a result of disconnections
-	int connectedPlayers = 0;
+	std::vector<std::unique_ptr<Component>> players{};
 
-	std::vector<Component*> players{};
+	ProjectileManager pManager(2048);
 
-	Player p;
-	p.set_speed(8);
-
+	//UPDATE LOOP
 	ENetEvent netEvent{};
 	while (!WindowShouldClose()) {
 		BeginDrawing(); //called at start to allow queueing of textures during logic
@@ -267,8 +300,8 @@ int main() {
 
 		switch (programState) {
 		case ProgramState::NET_SELECT: {
-			DAGLocalClient.reset();
-			DAGLocalServer.reset();
+			localClient.reset();
+			localServer.reset();
 
 			guiSelectorTest.init();
 
@@ -280,14 +313,19 @@ int main() {
 					programState = ProgramState::GAME;
 					break;
 				case NetworkMode::CLIENT:
-					DAGLocalClient = std::make_unique<LocalClient>(1, 2, 0, 0);
+					localClient = std::make_unique<Client>(1, 2, 0, 0);
+					
 					programState = ProgramState::IP_INPUT;
 					break;
 				case NetworkMode::SERVER:
-					DAGLocalServer = std::make_unique<LocalServer>(4, 2, 0, 0);
-					players.resize(DAGLocalServer->get_localHost()->peerCount, nullptr);
+					localServer = std::make_unique<Server>(4, 2, 0, 0);
+					
+					players.resize(localServer->get_playerLimit());
+					players.at(0) = std::move(std::make_unique<Component>(480.0f));
+					
+					localPlayer = players.at(0).get();
+					
 					programState = ProgramState::GAME;
-					localPlayer = &player0;
 					break;
 				}
 			}
@@ -304,19 +342,16 @@ int main() {
 			gui_IPInput.update();
 
 			if (gui_IPInput.wasEnterPressed()) {
-				if (DAGLocalClient->tryConnect(gui_IPInput.get_input().c_str(), 7777, 5000)) {
+				if (localClient->tryConnect(gui_IPInput.get_input().c_str(), 7777, 5000)) {
 					printf("Successful connection to server!\n");
-					programState = ProgramState::GAME;
 					gui_IPInput.deinit();
 
-					switch (DAGLocalClient->get_clientID()) {
-					case 1:
-						localPlayer = &player1;
-						break;
-					case 2:
-						localPlayer = &player2;
-						break;
-					}
+					players.resize(localClient->get_playerLimit());
+					players.at(localClient->get_clientID()) = std::make_unique<Component>(480.0f); //adds client to player list, client will add players as server says there are more
+
+					localPlayer = players.at(localClient->get_clientID()).get();
+
+					programState = ProgramState::GAME;
 				}
 				else {
 					fprintf(stderr, "Server connection unsuccessful.\n");
@@ -333,81 +368,90 @@ int main() {
 		case ProgramState::GAME: {
 			ClearBackground(BLACK);
 
+			//handle network events
 			switch (netMode) {
 			case NetworkMode::CLIENT: {
-				while (enet_host_service(DAGLocalClient->get_localHost(), &netEvent, 0) > 0) {
-					switch (netEvent.type) {
-					case ENET_EVENT_TYPE_RECEIVE: {
-						DAGPacket rPacket(netEvent.packet);
-						//std::cout << "received from server: " << rPacket.get_data() << "\n";
-						const std::vector<std::string>& rData = rPacket.get_data_array();
+				while (enet_host_service(localClient->get_localHost(), &netEvent, 0) > 0) {
+					if (netEvent.type == ENET_EVENT_TYPE_DISCONNECT) {
+						printf("received disconnect req\n");
+						enet_deinitialize();
+						CloseWindow();
+						return EXIT_SUCCESS;
+					}
+					
+					if (netEvent.type != ENET_EVENT_TYPE_RECEIVE) break;
+					DAGPacket rPacket(netEvent.packet);
 
-						int rID = std::atoi(rPacket.get_word(0));
-						float rX = std::atof(rPacket.get_word(1));
-						float rY = std::atof(rPacket.get_word(2));
-						float rA = std::atof(rPacket.get_word(3));
+					int rID = rPacket.get_int(0);
+					int rMessage = rPacket.get_int(1);
 
-						//ignore packet if data is about localClient
-						if (rID == DAGLocalClient->get_clientID()) {
-							enet_packet_destroy(netEvent.packet);
-							break;
+					switch ((NetworkMessage)rMessage) {
+					case NetworkMessage::UPDATE_PLAYER: {
+						if (rID == localClient->get_clientID()) break;
+
+						if (players.at(rID) == nullptr) {
+							players.at(rID) = std::make_unique<Component>(480.0f);
 						}
 
-						Component* playerToUpdate{};
-						switch (rID) {
-						case 0:
-							playerToUpdate = &player0;
-							break;
-						case 1:
-							playerToUpdate = &player1;
-							break;
-						case 2:
-							playerToUpdate = &player2;
-							break;
-						}
+						//player data from packet
+						float rX = rPacket.get_float(2);
+						float rY = rPacket.get_float(3);
+						float rA = rPacket.get_float(4);
 
-						//client updates its own data for _rID_
+						Component* playerToUpdate = players.at(rID).get();
+
 						playerToUpdate->set_hitbox({ rX, rY, playerToUpdate->get_hitbox().width, playerToUpdate->get_hitbox().height });
 						playerToUpdate->set_angle(rA);
-						printf("successfully updated player client _%d_ with received data.\n", rID);
 
-						//server sends packet to all peers
-
-						//otherPlayer.set_hitbox({ rX, rY, otherPlayer.get_hitbox().width, otherPlayer.get_hitbox().height });
-						//otherPlayer.set_angle(rA);
-
-						enet_packet_destroy(netEvent.packet);
-
-						/*player0.set_hitbox({ rX, rY, player0.get_hitbox().width, player0.get_hitbox().height });
-						player0.set_angle(rA);
-
-						enet_packet_destroy(netEvent.packet);*/
 						break;
 					}
+					case NetworkMessage::REMOVE_PLAYER: {
+						unsigned int tbrID = rPacket.get_int(2);
+
+						if (players.at(tbrID) != nullptr) {
+							players.at(tbrID).reset();
+						}
+
+						break;
 					}
+					case NetworkMessage::ADD_PROJECTILE: {
+						size_t pID = rPacket.get_int(2);
+						float pX = rPacket.get_float(3);
+						float pY = rPacket.get_float(4);
+						float pV = rPacket.get_float(5);
+						float pA = rPacket.get_float(6);
+
+						pManager.set(pID, pX, pY, pV, pA);
+						break;
+					}
+					default:
+						printf("Encountered unhandled network event id (%d). Discarding packet...\n", rMessage);
+						break;
+					}
+					
+					enet_packet_destroy(netEvent.packet);
 				}
 				break;
 			}
 			case NetworkMode::SERVER: {
-				while (enet_host_service(DAGLocalServer->get_localHost(), &netEvent, 0) > 0) {
+				while (enet_host_service(localServer->get_localHost(), &netEvent, 0) > 0) {
 					switch (netEvent.type) {
 					case ENET_EVENT_TYPE_CONNECT: {
-						DAGPacket packet;
+						//localServer->handleConnection(netEvent.peer);
+						DAGPacket packet; //packet to be sent to inform the new client about the game
 
-						int incomingID = -1;
-						//client id will be set to the first index in players at which the value is nullptr
-						for (int i = 0; i < players.size(); i++) {
-							if (players.at(i) == nullptr) {
-								incomingID = i;
-							}
-						}
+						int newID = localServer->addPeer(netEvent.peer); //client id will be set to the first index in players at which the value is nullptr
+						players.at(newID) = std::move(std::make_unique<Component>(480.0f));
 
-						packet.append(incomingID);
+						netEvent.peer->data = reinterpret_cast<void*>(newID); //assigns new client id to newly connected peer //TODO: use for basic message validation?
 
-						netEvent.peer->data = (void*)(incomingID); //assigns new client id to newly connected peer
+						//0 INFORM_PLAYER id playerCap
+						packet.appendHeader(SERVER_ID, NetworkMessage::INFORM_PLAYER);
+						packet.append(newID);
+						packet.append(localServer->get_playerLimit());
+						
+						localServer->sendTo(newID, packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
 
-						DAGLocalServer->sendTo(netEvent.peer, 0, packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
-						//DAGLocalServer->sendAll(packet.makePacket(ENET_PACKET_FLAG_RELIABLE));
 						break;
 					}
 					case ENET_EVENT_TYPE_RECEIVE: {
@@ -418,113 +462,192 @@ int main() {
 						//	packet contains the received data
 						//	client _id_ will intentionally ignore and delete this packet
 
-						//std::cout << "received packet from client _" << (int)(netEvent.peer->data) << "_\n";
-						
+						//EXPECTED DATA: clientID, UPDATE_PLAYER, x, y, theta
 						DAGPacket rPacket(netEvent.packet);
-						std::cout << "received from client _" << (int)(netEvent.peer->data) << "_: " << rPacket.get_data() << "\n";
-						const std::vector<std::string>& rData = rPacket.get_data_array();
 
 						//received data from client _rID_
-						int rID = std::atoi(rData.at(0).c_str());
-						float rX = std::atof(rData.at(1).c_str());
-						float rY = std::atof(rData.at(2).c_str());
-						float rA = std::atof(rData.at(3).c_str());
+						int rID = rPacket.get_int(0);
+						int rMessage = rPacket.get_int(1);
 
-						//selecting which player to update
-						Component* playerToUpdate{};
-						switch (rID) {
-						case 1:
-							playerToUpdate = &player1;
-							break;
-						case 2:
-							playerToUpdate = &player2;
+						switch ((NetworkMessage)rMessage) {
+						case NetworkMessage::UPDATE_PLAYER: {
+							float rX = rPacket.get_float(2);
+							float rY = rPacket.get_float(3);
+							float rA = rPacket.get_float(4);
+
+							//server updates its own data for _rID_
+							Component* playerToUpdate = players.at(rID).get();
+
+							playerToUpdate->set_hitbox({ rX, rY, playerToUpdate->get_hitbox().width, playerToUpdate->get_hitbox().height });
+							playerToUpdate->set_angle(rA);
+
+							//server forwards packet to all peers
+							localServer->sendAll(netEvent.packet);
 							break;
 						}
+						case NetworkMessage::ADD_PROJECTILE: {
+							/*
+							shootPacket.append(pID);
+							shootPacket.append(pX);
+							shootPacket.append(pY);
+							shootPacket.append(240.0f);
+							shootPacket.append(shootAngle);
+							*/
+							size_t pID = rPacket.get_int(2);
+							float pX = rPacket.get_float(3);
+							float pY = rPacket.get_float(4);
+							float pV = rPacket.get_float(5);
+							float pA = rPacket.get_float(6);
+							
+							pManager.set(pID, pX, pY, pV, pA);
 
-						//server updated its own data for _rID_
-						playerToUpdate->set_hitbox({ rX, rY, playerToUpdate->get_hitbox().width, playerToUpdate->get_hitbox().height });
-						playerToUpdate->set_angle(rA);
-
-						//printf("successfully updated player client _%d_ with received data.\n", rID);
-
-						//server sends packet to all peers
-						DAGLocalServer->sendAll(netEvent.packet);
+							localServer->sendAll(rPacket.makePacket(ENET_PACKET_FLAG_RELIABLE));
+							break;
+						}
+						}
+						
 						break;
 					}
-					case ENET_EVENT_TYPE_DISCONNECT:
-						printf("\n\n\npeer _%d_ disconnected.\n\n\n\n", (int)netEvent.peer->data);
+					case ENET_EVENT_TYPE_DISCONNECT: {
+						int id = reinterpret_cast<int>(netEvent.peer->data);
 
+						printf("Peer %d disconnected.\n", id);
+
+						DAGPacket disconnectPacket;
+						disconnectPacket.appendHeader(SERVER_ID, NetworkMessage::REMOVE_PLAYER);
+						disconnectPacket.append(id);
+						
 						/* Reset the peer's client information. */
-
 						netEvent.peer->data = NULL;
+
+						localServer->removePeer(id);
+						players.at(id).reset();
+
+						localServer->sendAll(disconnectPacket.makePacket(ENET_PACKET_FLAG_RELIABLE));
 						break;
+					}
 					}
 
 				}
 			}
 			}
 
-			//c.control();
-			//p.move();
+			pManager.killOld(5.0f);
+			pManager.moveAll();
+
+			//control local player
 			localPlayer->control();
 
-			if (netMode != NetworkMode::SINGLEPLAYER) {
-				//get x and y of localHost's ship, prepare as packet to send to peers
+			if (IsMouseButtonPressed(MouseButton::MOUSE_BUTTON_LEFT)) {
+				if (pManager.canAdd()) {
+					float pX = localPlayer->get_hitbox().x;
+					float pY = localPlayer->get_hitbox().y;
+					float shootAngle = angleBetween(pX, pY, static_cast<float>(GetMouseX()), static_cast<float>(GetMouseY()));
+
+					size_t pID = pManager.add(pX, pY, 240.0f, shootAngle);
 				
-				int sID;
-				switch (netMode) {
-				case NetworkMode::CLIENT:
-					sID = DAGLocalClient->get_clientID();
-					//enet_peer_send(serverPeer, 0, packet);
-					break;
-				case NetworkMode::SERVER:
-					sID = 0;
-					//enet_host_broadcast(localHost, 0, packet);
-					break;
+					if (netMode != NetworkMode::SINGLEPLAYER) {
+						DAGPacket shootPacket;
+
+						int sID = SERVER_ID;
+						if (netMode == NetworkMode::CLIENT) {
+							sID = localClient->get_clientID();
+						}
+						
+						shootPacket.appendHeader(sID, NetworkMessage::ADD_PROJECTILE);
+						shootPacket.append(pID);
+						shootPacket.append(pX);
+						shootPacket.append(pY);
+						shootPacket.append(240.0f);
+						shootPacket.append(shootAngle);
+
+						ENetPacket* packet = shootPacket.makePacket(ENET_PACKET_FLAG_RELIABLE);
+
+						switch (netMode) {
+						case NetworkMode::CLIENT:
+							localClient->sendToServer(packet);
+							break;
+						case NetworkMode::SERVER:
+							localServer->sendAll(packet);
+							break;
+						}
+					}
 				}
 				
+				if (netMode != NetworkMode::SINGLEPLAYER && pManager.canAdd()) {
+					DAGPacket shootPacket;
+
+					int sID = SERVER_ID;
+					if (netMode == NetworkMode::CLIENT) {
+						sID = localClient->get_clientID();
+					}
+					shootPacket.appendHeader(sID, NetworkMessage::ADD_PROJECTILE);
+
+				}
+			}
+
+			if (netMode != NetworkMode::SINGLEPLAYER) {
+				//get id to send
+				int sID = SERVER_ID;
+				if (netMode == NetworkMode::CLIENT) {
+					sID = localClient->get_clientID();
+				}
+
+				//data
 				float sX = localPlayer->get_hitbox().x;
 				float sY = localPlayer->get_hitbox().y;
 				float sAngle = localPlayer->get_angle();
+				sAngle = fmodf(sAngle, 2 * PI); //cap sAngle between 0 and 2 * PI
 
+				//EXPECTED DATA: clientID, UPDATE_PLAYER, x, y, theta
 				DAGPacket sPacket;
-				sPacket.append(sID);
+				sPacket.appendHeader(sID, NetworkMessage::UPDATE_PLAYER);
+
 				sPacket.append(TextFormat("%.1f", sX));
 				sPacket.append(TextFormat("%.1f", sY));
-				sPacket.append(TextFormat("%.2f", fmodf(sAngle, 2 * PI)));
+				sPacket.append(TextFormat("%.2f", sAngle));
 
 				ENetPacket* packet = sPacket.makePacket(ENET_PACKET_FLAG_RELIABLE);
+
 				switch (netMode) {
 				case NetworkMode::CLIENT:
-					DAGLocalClient->sendToServer(packet);
-					//enet_peer_send(serverPeer, 0, packet);
+					localClient->sendToServer(packet);
 					break;
 				case NetworkMode::SERVER:
-					DAGLocalServer->sendAll(packet);
-					//enet_host_broadcast(localHost, 0, packet);
+					localServer->sendAll(packet);
 					break;
 				}
 			}
-
 			
 			localPlayer->draw();
 			localPlayer->drawHUD(10, 10);
-			//c.draw();
-			//p.draw();
-			//c.drawHUD(0, 0);
-
+		
 			if (netMode != NetworkMode::SINGLEPLAYER) {
-				//otherPlayer.draw();
-				//otherPlayer.drawHUD(0, 600);
-				player0.draw();
-				player1.draw();
-				player2.draw();
+				for (auto& player : players) {
+					if (player == nullptr) continue;
+					player->draw();
+				}
 			}
+
+			pManager.drawAll();
 			break;
 		}
 		}
 
 		EndDrawing();
+	}
+
+
+	//DEINITIALIZATION
+	switch (netMode) {
+	case NetworkMode::CLIENT:
+		if (localClient->isConnected()) {
+			localClient->tryDisconnect();
+		}
+		break;
+	case NetworkMode::SERVER:
+		localServer->closeServer();
+		break;
 	}
 
 	enet_deinitialize();

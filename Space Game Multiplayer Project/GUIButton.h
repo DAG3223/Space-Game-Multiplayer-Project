@@ -13,8 +13,8 @@ public:
 
 		textSize = txtSz;
 
-		verticalPadding = vPad;
-		horizontalPadding = hPad;
+		verticalPadding = static_cast<float>(vPad);
+		horizontalPadding = static_cast<float>(hPad);
 
 		updateRec();
 
@@ -32,8 +32,8 @@ public:
 
 		textSize = txtSz;
 
-		verticalPadding = vPad;
-		horizontalPadding = hPad;
+		verticalPadding = static_cast<float>(vPad);
+		horizontalPadding = static_cast<float>(hPad);
 
 		updateRec();
 
@@ -62,7 +62,7 @@ public:
 	void draw() {
 		if (!enabled) return;
 		DrawRectangleRec(hitbox, bgClr);
-		DrawText(text, hitbox.x + horizontalPadding, hitbox.y + verticalPadding, textSize, fgClr);
+		DrawText(text, static_cast<int>(hitbox.x + horizontalPadding), static_cast<int>(hitbox.y + verticalPadding), textSize, fgClr);
 	}
 
 	void set_pos(Vector2 pos) {

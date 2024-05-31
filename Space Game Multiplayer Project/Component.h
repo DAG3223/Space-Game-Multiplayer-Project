@@ -13,10 +13,10 @@ public:
 		//control linear acceleration
 		acceleration = 0;
 		if (IsKeyDown(KeyboardKey::KEY_W)) {
-			acceleration += 16;
+			acceleration += 32;
 		}
 		if (IsKeyDown(KeyboardKey::KEY_S)) {
-			acceleration -= 16;
+			acceleration -= 32;
 		}
 
 		//change and clamp velocity, (v = v0 + at)
@@ -44,8 +44,8 @@ public:
 
 		//debug displays
 		DrawRectangleLinesEx(hitbox, 2.0f, RED);
-		DrawCircle(hitbox.x, hitbox.y, 2.0f, RED);
-		DrawLine(display.x, display.y, display.x + 30 * cosf(angle), display.y + 30 * sinf(angle), RED);
+		DrawCircle(static_cast<int>(hitbox.x), static_cast<int>(hitbox.y), 2.0f, RED);
+		DrawLine(static_cast<int>(display.x), static_cast<int>(display.y), static_cast<int>(display.x + 30 * cosf(angle)), static_cast<int>(display.y + 30 * sinf(angle)), RED);
 	}
 
 	void drawHUD(int x, int y) {
