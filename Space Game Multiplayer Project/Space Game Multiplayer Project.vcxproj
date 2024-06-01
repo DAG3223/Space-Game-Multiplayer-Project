@@ -149,7 +149,9 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Component.h" />
+    <ClInclude Include="DAGNetworking.h" />
     <ClInclude Include="GameNetworkGlobals.h" />
+    <ClInclude Include="DAG_GUI.h" />
     <ClInclude Include="GUIButton.h" />
     <ClInclude Include="GUITextField.h" />
     <ClInclude Include="I_GUI.h" />

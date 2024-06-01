@@ -7,14 +7,8 @@
 #include "raylib.h"
 #include "raymath.h"
 
-#include "enetfix.h"
-#include "Client.h"
-#include "Server.h"
-#include "DAGPacket.h"
-
-#include "I_GUI.h"
-#include "GUIButton.h"
-#include "GUITextField.h"
+#include "DAGNetworking.h"
+#include "DAG_GUI.h"
 
 #include "Utils.h"
 #include "Component.h"
@@ -182,7 +176,7 @@ public:
 		netID = id;
 	}
 
-	bool isTouching(Rectangle& rec) {
+	bool isTouching(const Rectangle& rec) {
 		return CheckCollisionRecs(hitbox, rec);
 	}
 
@@ -255,10 +249,13 @@ public:
 	}
 
 	//inefficient, will be ran multiple times to perform all collisions
-	auto findColliding(Rectangle& hitbox) {
-		return std::find_if(projectiles.begin(), projectiles.end(), [&hitbox](std::unique_ptr<Projectile>& p) { return p->isTouching(hitbox); });
+	auto findColliding(const Rectangle& hitbox) {
+		return std::find_if(projectiles.begin(), projectiles.end(), [&hitbox](std::unique_ptr<Projectile>& p) { if (p == nullptr) return false; return p->isTouching(hitbox); });
 	}
 
+	const std::vector<std::unique_ptr<Projectile>>& data() {
+		return projectiles;
+	}
 private:
 	template<typename _Fn>
 	void forAll(_Fn func) {
@@ -289,6 +286,7 @@ int main() {
 
 	Component* localPlayer{};
 	std::vector<std::unique_ptr<Component>> players{};
+	std::vector<int> playerLosses{};
 
 	ProjectileManager pManager(2048);
 
@@ -321,6 +319,7 @@ int main() {
 					localServer = std::make_unique<Server>(4, 2, 0, 0);
 					
 					players.resize(localServer->get_playerLimit());
+					playerLosses.resize(localServer->get_playerLimit());
 					players.at(0) = std::move(std::make_unique<Component>(480.0f));
 					
 					localPlayer = players.at(0).get();
@@ -347,6 +346,7 @@ int main() {
 					gui_IPInput.deinit();
 
 					players.resize(localClient->get_playerLimit());
+					playerLosses.resize(localClient->get_playerLimit(), 0);
 					players.at(localClient->get_clientID()) = std::make_unique<Component>(480.0f); //adds client to player list, client will add players as server says there are more
 
 					localPlayer = players.at(localClient->get_clientID()).get();
@@ -397,11 +397,13 @@ int main() {
 						float rX = rPacket.get_float(2);
 						float rY = rPacket.get_float(3);
 						float rA = rPacket.get_float(4);
+						float rHP = rPacket.get_float(5);
 
 						Component* playerToUpdate = players.at(rID).get();
 
 						playerToUpdate->set_hitbox({ rX, rY, playerToUpdate->get_hitbox().width, playerToUpdate->get_hitbox().height });
 						playerToUpdate->set_angle(rA);
+						playerToUpdate->set_hp(rHP);
 
 						break;
 					}
@@ -422,6 +424,16 @@ int main() {
 						float pA = rPacket.get_float(6);
 
 						pManager.set(pID, pX, pY, pV, pA);
+						break;
+					}
+					case NetworkMessage::REMOVE_PROJECTILE: {
+						int pID = rPacket.get_int(2);
+						pManager.kill(pID);
+						break;
+					}
+					case NetworkMessage::UPDATE_PLAYER_LOSSES: {
+						playerLosses.at(rID) = rPacket.get_int(2);
+
 						break;
 					}
 					default:
@@ -474,12 +486,14 @@ int main() {
 							float rX = rPacket.get_float(2);
 							float rY = rPacket.get_float(3);
 							float rA = rPacket.get_float(4);
+							int rHP = rPacket.get_int(5);
 
 							//server updates its own data for _rID_
 							Component* playerToUpdate = players.at(rID).get();
 
 							playerToUpdate->set_hitbox({ rX, rY, playerToUpdate->get_hitbox().width, playerToUpdate->get_hitbox().height });
 							playerToUpdate->set_angle(rA);
+							playerToUpdate->set_hp(rHP);
 
 							//server forwards packet to all peers
 							localServer->sendAll(netEvent.packet);
@@ -501,7 +515,20 @@ int main() {
 							
 							pManager.set(pID, pX, pY, pV, pA);
 
-							localServer->sendAll(rPacket.makePacket(ENET_PACKET_FLAG_RELIABLE));
+							localServer->sendAll(netEvent.packet);
+							break;
+						}
+						case NetworkMessage::REMOVE_PROJECTILE: {
+							int pID = rPacket.get_int(2);
+							pManager.kill(pID);
+
+							localServer->sendAll(netEvent.packet);
+							break;
+						}
+						case NetworkMessage::UPDATE_PLAYER_LOSSES: {
+							playerLosses.at(rID) = rPacket.get_int(2);
+
+							localServer->sendAll(netEvent.packet);
 							break;
 						}
 						}
@@ -527,7 +554,6 @@ int main() {
 						break;
 					}
 					}
-
 				}
 			}
 			}
@@ -538,11 +564,75 @@ int main() {
 			//control local player
 			localPlayer->control();
 
+			//process all collisions with localHost's player, and send packets to delete the projectile with netID pID
+			auto projectileIt = pManager.findColliding(localPlayer->get_hitbox());
+			while (projectileIt != pManager.data().end()) {
+				localPlayer->damage(50);
+				
+				int sID = SERVER_ID;
+				if (netMode == NetworkMode::CLIENT) {
+					sID = localClient->get_clientID();
+				}
+
+				size_t pID = (*projectileIt)->get_netID();
+				pManager.kill(pID);
+
+				DAGPacket pDestroyPacket;
+				pDestroyPacket.appendHeader(sID, NetworkMessage::REMOVE_PROJECTILE);
+				pDestroyPacket.append(pID);
+
+				ENetPacket* packet = pDestroyPacket.makePacket(ENET_PACKET_FLAG_RELIABLE);
+
+				switch (netMode) {
+				case NetworkMode::CLIENT:
+					localClient->sendToServer(packet);
+					break;
+				case NetworkMode::SERVER:
+					localServer->sendAll(packet);
+					break;
+				}
+
+				projectileIt = pManager.findColliding(localPlayer->get_hitbox());
+			}
+
+			//if dead, regen health and increase death count
+			if (localPlayer->get_hp() <= 0) {
+				localPlayer->set_hp(1000);
+
+				int playerID = SERVER_ID;
+				if (netMode == NetworkMode::CLIENT) {
+					playerID = localClient->get_clientID();
+				}
+
+				playerLosses.at(playerID)++;
+
+				if (netMode != NetworkMode::SINGLEPLAYER) {
+					DAGPacket deathPacket;
+
+					deathPacket.appendHeader(playerID, NetworkMessage::UPDATE_PLAYER_LOSSES);
+					deathPacket.append(playerLosses.at(playerID));
+
+					ENetPacket* packet = deathPacket.makePacket(ENET_PACKET_FLAG_RELIABLE);
+
+					switch (netMode) {
+					case NetworkMode::CLIENT:
+						localClient->sendToServer(packet);
+						break;
+					case NetworkMode::SERVER:
+						localServer->sendAll(packet);
+						break;
+					}
+				}
+			}
+
+			//shoot
 			if (IsMouseButtonPressed(MouseButton::MOUSE_BUTTON_LEFT)) {
 				if (pManager.canAdd()) {
-					float pX = localPlayer->get_hitbox().x;
-					float pY = localPlayer->get_hitbox().y;
+					float pX = (localPlayer->get_hitbox().x + localPlayer->get_hitbox().width / 2.0f);
+					float pY = (localPlayer->get_hitbox().y + localPlayer->get_hitbox().height / 2.0f);
 					float shootAngle = angleBetween(pX, pY, static_cast<float>(GetMouseX()), static_cast<float>(GetMouseY()));
+					pX += 50 * cosf(shootAngle);
+					pY += 50 * sinf(shootAngle);
 
 					size_t pID = pManager.add(pX, pY, 240.0f, shootAngle);
 				
@@ -586,6 +676,7 @@ int main() {
 				}
 			}
 
+			//position packet
 			if (netMode != NetworkMode::SINGLEPLAYER) {
 				//get id to send
 				int sID = SERVER_ID;
@@ -598,6 +689,7 @@ int main() {
 				float sY = localPlayer->get_hitbox().y;
 				float sAngle = localPlayer->get_angle();
 				sAngle = fmodf(sAngle, 2 * PI); //cap sAngle between 0 and 2 * PI
+				int sHP = localPlayer->get_hp();
 
 				//EXPECTED DATA: clientID, UPDATE_PLAYER, x, y, theta
 				DAGPacket sPacket;
@@ -606,6 +698,7 @@ int main() {
 				sPacket.append(TextFormat("%.1f", sX));
 				sPacket.append(TextFormat("%.1f", sY));
 				sPacket.append(TextFormat("%.2f", sAngle));
+				sPacket.append(sHP);
 
 				ENetPacket* packet = sPacket.makePacket(ENET_PACKET_FLAG_RELIABLE);
 
@@ -619,15 +712,18 @@ int main() {
 				}
 			}
 			
-			localPlayer->draw();
-			localPlayer->drawHUD(10, 10);
-		
+			
 			if (netMode != NetworkMode::SINGLEPLAYER) {
-				for (auto& player : players) {
+				for (int i = 0; i < players.size(); i++) {
+					Component* player = players.at(i).get();
 					if (player == nullptr) continue;
+
 					player->draw();
+					DrawText(TextFormat("HP: %d", player->get_hp()), player->get_hitbox().x, player->get_hitbox().y - 30, 5, DARKGREEN);
+					DrawText(TextFormat("Deaths: %d", playerLosses.at(i)), player->get_hitbox().x, player->get_hitbox().y - 20, 5, WHITE);
 				}
 			}
+			localPlayer->drawHUD(10, 10);
 
 			pManager.drawAll();
 			break;

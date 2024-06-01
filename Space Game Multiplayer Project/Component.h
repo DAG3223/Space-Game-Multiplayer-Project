@@ -49,10 +49,12 @@ public:
 	}
 
 	void drawHUD(int x, int y) {
-		DrawText(TextFormat("a: %3.1f px/s^2", acceleration), 10 + x, 10 + y, 10, WHITE);
-		DrawText(TextFormat("v: %4.1f / %4.1f px/s", velocity, maxVelocity), 10 + x, 30 + y, 10, WHITE);
-		DrawText(TextFormat("x: %.1f, y: %.1f", hitbox.x, hitbox.y), 10 + x, 50 + y, 10, WHITE);
-		DrawText(TextFormat("angle: %.2f", fmodf(angle, 2 * PI)), 10 + x, 70 + y, 10, WHITE);
+		DrawText(TextFormat("HP: %d", hp), x, y, 20, DARKGREEN);
+
+		DrawText(TextFormat("a: %3.1f px/s^2", acceleration), x, y + 40, 10, WHITE);
+		DrawText(TextFormat("v: %4.1f / %4.1f px/s", velocity, maxVelocity), x, y + 60, 10, WHITE);
+		DrawText(TextFormat("x: %.1f, y: %.1f", hitbox.x, hitbox.y), 10 + x, y + 80, 10, WHITE);
+		DrawText(TextFormat("angle: %.2f", fmodf(angle, 2 * PI)), 10 + x, y + 100, 10, WHITE);
 	}
 
 	const Rectangle& get_hitbox() {
@@ -70,10 +72,24 @@ public:
 	void set_angle(float radians) {
 		angle = radians;
 	}
+
+	void damage(int dmg) {
+		hp -= dmg;
+	}
+
+	int get_hp() {
+		return hp;
+	}
+
+	void set_hp(int HP) {
+		hp = HP;
+	}
 private:
 	Rectangle hitbox{};
 	float angle{};
 	float velocity{};
 	float maxVelocity{}; //arbitrary
 	float acceleration{};
+
+	int hp{1000};
 };

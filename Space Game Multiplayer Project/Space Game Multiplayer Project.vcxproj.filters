@@ -50,5 +50,11 @@
     <ClInclude Include="NetTypes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="DAG_GUI.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DAGNetworking.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
